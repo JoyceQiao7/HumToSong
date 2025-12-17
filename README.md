@@ -1,98 +1,105 @@
 # 🎵 HumToHarmony
 
-**Turn your humming into complete musical compositions — no music theory required.**
+**Music 159 - Computer Programming for Music Applications | Final Project | UC Berkeley**
 
-HumToHarmony is a Python-based music production tool that transforms simple hummed melodies into full arrangements with harmony, bass, and professional-quality sounds. Describe the sound you want in plain English, and the app brings your musical ideas to life.
+---
 
-## 🎯 Features
+## Purpose
 
-- **🎤 Hum-to-Melody**: Record your humming and watch it transform into precise musical notes
-- **🎹 Auto-Harmony**: Automatically generates chord progressions that fit your melody
-- **🎸 Smart Bass Lines**: Creates bass lines that groove with your music
-- **🗣️ Natural Language Timbre**: Describe sounds in plain English ("warm analog synth", "bright piano")
-- **🎨 Multiple Styles**: Pop, Jazz, Lo-Fi, Classical, Electronic
-- **💾 Export**: Save as WAV, MP3, or MIDI
+**HumToHarmony** is a Python-based music production tool that transforms hummed melodies into complete musical compositions—no music theory required. It bridges the gap between having a melody "in your head" and turning it into a finished piece of music.
 
-## 🚀 Quick Start
+The application:
+1. Captures your musical idea through humming
+2. Detects pitch and converts it to musical notes
+3. Automatically generates harmony (chords and bass lines)
+4. Lets you describe sounds in plain English (e.g., "warm analog synth")
+5. Synthesizes audio and exports as WAV, MP3, or MIDI
+
+---
+
+## Key Features & Techniques
+
+| Feature | Description | Techniques Used |
+|---------|-------------|-----------------|
+| **Hum-to-Melody** | Converts humming to musical notes | PYIN pitch detection, Krumhansl-Schmuckler key detection, note quantization |
+| **Auto-Harmony** | Generates chord progressions & bass lines | Rule-based harmony generation, style templates (Pop, Jazz, Lo-Fi, Classical) |
+| **Natural Language Timbre** | Describe sounds in plain English | Text parsing, descriptor-to-parameter mapping (50+ descriptors) |
+| **Synthesizer Engine** | Creates professional-quality sounds | Subtractive synthesis, ADSR envelopes, oscillators (sine, saw, square, triangle) |
+| **Effects & Mixing** | Polishes the final output | Reverb, delay, chorus, compression, multi-track mixing |
+
+### Techniques from Class
+- Digital signal processing (waveforms, filtering, envelopes)
+- Audio analysis (pitch detection, spectral analysis)
+- MIDI processing and export
+- Audio effects (comb/allpass filters for reverb, delay lines)
+
+### Techniques Beyond Class
+- Machine learning for pitch detection (neural network-based)
+- Natural language processing for timbre descriptions
+- Music theory algorithms (key detection, chord progression generation)
+
+---
+
+## How to Use
 
 ### Installation
 
 ```bash
-# Clone or download the project
 cd "final proj"
-
-# Create virtual environment (recommended)
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Download spaCy language model
-python -m spacy download en_core_web_sm
 ```
 
-### Running the App
+### Running
 
 ```bash
 streamlit run app/main.py
 ```
+Open your browser to `http://localhost:8501`
 
-Then open your browser to `http://localhost:8501`
+### Workflow
 
-## 📖 How to Use
+1. **Upload Audio**: Record yourself humming a melody and upload the file (WAV, MP3, OGG, FLAC)
+2. **Review Notes**: See your humming converted to musical notes on a piano roll with auto-detected key
+3. **Generate Harmony**: Select a style (Pop, Jazz, Lo-Fi, etc.) to auto-generate chords and bass
+4. **Choose Sounds**: Type descriptions like "bright synth lead" or "warm piano", or use quick presets
+5. **Export**: Download as WAV, MP3, or MIDI
 
-### Step 1: Record Your Melody
-Click the record button and hum your melody idea. Don't worry about being perfectly in tune — the app will help!
+---
 
-### Step 2: Review Your Notes
-See your humming converted to musical notes on a piano roll. The app detects the key automatically.
-
-### Step 3: Generate Harmony
-Choose a musical style (Pop, Jazz, Lo-Fi, etc.) and let the app generate chords and bass.
-
-### Step 4: Choose Your Sounds
-Describe the sound you want in plain English:
-- Melody: *"bright, playful synth lead"*
-- Harmony: *"warm Rhodes electric piano"*
-- Bass: *"deep, smooth sub bass"*
-
-Or choose from quick presets!
-
-### Step 5: Export
-Preview your creation and export as WAV, MP3, or MIDI.
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```
-hum_to_harmony/
-├── app/
-│   ├── main.py              # Streamlit entry point
-│   ├── config.py            # Configuration
-│   ├── ui/                  # UI components
-│   ├── core/                # Core logic
-│   │   ├── pitch/           # Pitch detection
-│   │   ├── harmony/         # Chord & bass generation
-│   │   ├── timbre/          # NL timbre system
-│   │   ├── synth/           # Sound synthesis
-│   │   └── mixer/           # Audio mixing
-│   ├── database/            # SQLite operations
-│   └── utils/               # Utilities
-├── data/
-│   ├── db/                  # SQLite database
-│   ├── projects/            # User projects
-│   └── presets/             # Sound presets
-├── requirements.txt
-└── README.md
+app/
+├── main.py                 # Streamlit UI
+├── core/
+│   ├── pitch/              # Pitch detection, key detection, quantization
+│   ├── harmony/            # Chord & bass generation
+│   ├── timbre/             # Natural language sound design
+│   ├── synth/              # Synthesis engine (oscillators, filters, envelopes)
+│   └── mixer/              # Mixing, effects, export
+├── database/               # SQLite for project storage
+└── utils/                  # Audio I/O, MIDI utilities
 ```
 
-## 🎓 Course Information
+---
 
-**Course**: Music 159 - Computer Programming for Music Applications  
-**Assignment**: Final Project  
-**University**: UC Berkeley
+## Assignment Goal Alignment
 
-## 📝 License
+| Goal | Implementation |
+|------|----------------|
+| **Creating New Sounds** | Custom synthesizer with natural language timbre control |
+| **Transforming Sounds** | Pitch-to-note conversion, effects processing |
+| **Classifying Sound** | Automatic key and tempo detection |
+| **Supporting Creative Process** | Complete melody-to-music production pipeline |
 
-This project is for educational purposes as part of UC Berkeley's Music 159 course.
+---
 
+## Dependencies
+
+`librosa` (audio analysis) · `streamlit` (UI) · `numpy/scipy` (DSP) · `soundfile` (audio I/O) · `midiutil` (MIDI export)
+
+---
+
+*This project is for educational purposes as part of UC Berkeley's Music 159 course.*
