@@ -1,0 +1,35 @@
+{
+    "name": "Classic Synth Lead",
+    "category": "lead",
+    "description": "Classic sawtooth synthesizer lead with unison voices",
+    
+    "oscillator": {
+        "waveform": "sawtooth",
+        "detune": 0.0,
+        "unison_voices": 2,
+        "unison_spread": 12.0
+    },
+    
+    "filter": {
+        "type": "lowpass",
+        "cutoff": 0.7,
+        "resonance": 0.3,
+        "envelope_amount": 0.2
+    },
+    
+    "envelope": {
+        "attack": 0.01,
+        "decay": 0.2,
+        "sustain": 0.7,
+        "release": 0.3
+    },
+    
+    "effects": {
+        "reverb": 0.2,
+        "delay": 0.15,
+        "chorus": 0.0
+    },
+    
+    "tags": ["synth", "lead", "classic", "bright", "sawtooth"]
+}
+
