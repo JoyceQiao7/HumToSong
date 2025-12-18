@@ -56,6 +56,27 @@ st.markdown("""
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
     }
     
+    /* Make ALL text white by default */
+    .stApp, .stApp p, .stApp span, .stApp li, .stApp label {
+        color: #ffffff !important;
+    }
+    
+    /* Markdown text styling */
+    .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span {
+        color: #ffffff !important;
+    }
+    
+    /* Bold text */
+    .stMarkdown strong, .stMarkdown b, strong, b {
+        color: #ffffff !important;
+        font-weight: 600;
+    }
+    
+    /* List items */
+    .stMarkdown ul, .stMarkdown ol, .stMarkdown li {
+        color: #ffffff !important;
+    }
+    
     .main-title {
         font-size: 3em;
         font-weight: bold;
@@ -68,13 +89,13 @@ st.markdown("""
     
     .subtitle {
         text-align: center;
-        color: #a0a0a0;
+        color: #a0a0a0 !important;
         font-size: 1.2em;
         margin-bottom: 2em;
     }
     
     .step-header {
-        color: #4ECDC4;
+        color: #4ECDC4 !important;
         font-size: 1.5em;
         font-weight: bold;
         margin-top: 1em;
@@ -82,11 +103,18 @@ st.markdown("""
     }
     
     .info-box {
-        background-color: rgba(78, 205, 196, 0.1);
+        background-color: rgba(78, 205, 196, 0.15);
         border-left: 4px solid #4ECDC4;
         padding: 1em;
         border-radius: 0 8px 8px 0;
         margin: 1em 0;
+        color: #ffffff !important;
+        font-weight: 400;
+    }
+    
+    .info-box b {
+        color: #ffffff !important;
+        font-weight: 600;
     }
     
     .success-box {
@@ -100,6 +128,79 @@ st.markdown("""
         background-color: rgba(255, 255, 255, 0.05);
         border-radius: 10px;
         padding: 10px;
+    }
+    
+    /* File uploader styling */
+    div[data-testid="stFileUploader"] {
+        background-color: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        padding: 10px;
+    }
+    
+    div[data-testid="stFileUploader"] label {
+        color: #ffffff !important;
+    }
+    
+    /* File uploader drop zone styling */
+    div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] {
+        background: linear-gradient(135deg, rgba(78, 205, 196, 0.15) 0%, rgba(255, 107, 107, 0.15) 100%) !important;
+        border: 2px dashed #4ECDC4 !important;
+        border-radius: 12px !important;
+    }
+    
+    div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"]:hover {
+        background: linear-gradient(135deg, rgba(78, 205, 196, 0.25) 0%, rgba(255, 107, 107, 0.25) 100%) !important;
+        border-color: #FF6B6B !important;
+    }
+    
+    /* Style the Browse files button specifically */
+    div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] button[kind="secondary"] {
+        background: linear-gradient(90deg, #FF6B6B, #4ECDC4) !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        cursor: pointer !important;
+        pointer-events: auto !important;
+    }
+    
+    /* File uploader text */
+    div[data-testid="stFileUploader"] small {
+        color: #b0b0b0 !important;
+    }
+    
+    div[data-testid="stFileUploader"] span {
+        color: #ffffff !important;
+    }
+    
+    /* Ensure the drop zone text is visible */
+    div[data-testid="stFileUploaderDropzoneInstructions"] span {
+        color: #ffffff !important;
+    }
+    
+    div[data-testid="stFileUploaderDropzoneInstructions"] div {
+        color: #a0a0a0 !important;
+    }
+    
+    /* Sidebar text */
+    section[data-testid="stSidebar"] {
+        background-color: rgba(0, 0, 0, 0.3);
+    }
+    
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] .stMarkdown li,
+    section[data-testid="stSidebar"] label {
+        color: #ffffff !important;
+    }
+    
+    /* Selectbox and input labels */
+    .stSelectbox label, .stTextInput label, .stSlider label {
+        color: #ffffff !important;
+    }
+    
+    /* Caption text */
+    .stCaption, small {
+        color: #a0a0a0 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -134,6 +235,8 @@ if 'harmony_audio' not in st.session_state:
     st.session_state.harmony_audio = None
 if 'bass_audio' not in st.session_state:
     st.session_state.bass_audio = None
+if 'vocal_audio' not in st.session_state:
+    st.session_state.vocal_audio = None
 if 'mixed_audio' not in st.session_state:
     st.session_state.mixed_audio = None
 
@@ -210,8 +313,11 @@ with col1:
     )
     
     if uploaded_file is not None:
-        # Save to temp file and load
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
+        # Get the original file extension to preserve format
+        original_ext = Path(uploaded_file.name).suffix.lower() or '.wav'
+        
+        # Save to temp file with correct extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix=original_ext) as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
         
@@ -260,14 +366,40 @@ if st.session_state.recording is not None:
     if analyze_btn or len(st.session_state.melody_notes) > 0:
         
         if analyze_btn:
-            with st.spinner("Detecting pitch... (this may take a moment)"):
-                # Detect pitch
+            # Show detailed progress
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            try:
+                import time
+                start_time = time.time()
+                
+                # Step 1: Preprocessing
+                status_text.text("🎤 Step 1/5: Preprocessing audio (isolating voice)...")
+                progress_bar.progress(10)
+                
+                audio_duration = len(st.session_state.recording) / SAMPLE_RATE
+                status_text.text(f"🎤 Step 1/5: Preprocessing {audio_duration:.1f}s of audio...")
+                
+                # Step 2: Pitch Detection
+                status_text.text("🎵 Step 2/5: Detecting pitch (this is the slow part)...")
+                progress_bar.progress(20)
+                
                 pitch_result = detect_pitch(st.session_state.recording, SAMPLE_RATE)
                 
-                # Extract notes
-                notes = extract_notes(pitch_result)
+                elapsed = time.time() - start_time
+                status_text.text(f"✅ Pitch detection complete in {elapsed:.1f}s")
+                progress_bar.progress(50)
                 
-                # Detect tempo
+                # Step 3: Extract notes
+                status_text.text("🎹 Step 3/5: Extracting musical notes...")
+                progress_bar.progress(60)
+                notes = extract_notes(pitch_result)
+                status_text.text(f"🎹 Found {len(notes)} notes")
+                
+                # Step 4: Detect tempo
+                status_text.text("⏱️ Step 4/5: Detecting tempo...")
+                progress_bar.progress(70)
                 detected_tempo, _ = detect_tempo(st.session_state.recording, SAMPLE_RATE, tempo)
                 st.session_state.tempo = detected_tempo
                 
@@ -276,6 +408,8 @@ if st.session_state.recording is not None:
                 notes_in_beats = notes_to_beats(notes, st.session_state.tempo)
                 
                 # Detect key
+                status_text.text("🎼 Step 5/5: Detecting key and quantizing...")
+                progress_bar.progress(85)
                 key_result = detect_key(notes_in_beats)
                 st.session_state.detected_key = key_result
                 
@@ -288,6 +422,17 @@ if st.session_state.recording is not None:
                 )
                 
                 st.session_state.melody_notes = quantized
+                
+                # Complete
+                progress_bar.progress(100)
+                total_time = time.time() - start_time
+                status_text.text(f"✅ Analysis complete in {total_time:.1f}s - Found {len(quantized)} notes")
+                
+            except Exception as e:
+                status_text.text(f"❌ Error: {str(e)}")
+                st.error(f"Pitch detection failed: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
         
         # Display results
         if st.session_state.melody_notes:
@@ -433,9 +578,17 @@ if len(st.session_state.chords) > 0:
             bass_desc = bass_preset.lower()
         st.caption(get_description_summary(bass_desc))
     
-    # Render button
+    # Options
     st.markdown("")
-    render_btn = st.button("🎧 Render Audio", type="primary", use_container_width=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        include_vocals = st.checkbox(
+            "🎤 Include original humming as vocals",
+            value=True,
+            help="Add your processed humming voice to the final mix for a complete song"
+        )
+    with col2:
+        render_btn = st.button("🎧 Render Audio", type="primary", use_container_width=True)
     
     if render_btn:
         with st.spinner("Synthesizing your music... 🎵"):
@@ -476,17 +629,47 @@ if len(st.session_state.chords) > 0:
             )
             st.session_state.bass_audio = bass_audio
             
-            # Mix tracks
-            melody_track = Track("Melody", melody_audio, volume=0.8)
+            # Prepare tracks
+            tracks = []
+            
+            # Instrumental tracks
+            melody_track = Track("Melody", melody_audio, volume=0.7)
             harmony_track = Track("Harmony", harmony_audio, volume=0.5, pan=-0.2)
-            bass_track = Track("Bass", bass_audio, volume=0.7, pan=0.0)
+            bass_track = Track("Bass", bass_audio, volume=0.65, pan=0.0)
             
             # Add effects based on style
             melody_track.effects = EffectsChain(reverb=0.2, delay=0.1)
             harmony_track.effects = EffectsChain(reverb=0.35, chorus=0.2)
             bass_track.effects = EffectsChain(reverb=0.1)
             
-            mixed = mix_tracks([melody_track, harmony_track, bass_track], SAMPLE_RATE)
+            tracks.extend([melody_track, harmony_track, bass_track])
+            
+            # Add vocal track if requested
+            if include_vocals:
+                from utils.audio_io import prepare_vocal_track
+                from utils.midi_utils import beats_to_seconds
+                
+                # Get total duration from the longest track
+                max_beats = max(n.start_time + n.duration for n in st.session_state.melody_notes)
+                total_duration = beats_to_seconds(max_beats, st.session_state.tempo) + 1.0
+                
+                # Prepare vocal track
+                vocal_audio = prepare_vocal_track(
+                    st.session_state.recording,
+                    SAMPLE_RATE,
+                    target_duration=total_duration
+                )
+                
+                vocal_track = Track("Vocals", vocal_audio, volume=0.85, pan=0.1)
+                vocal_track.effects = EffectsChain(reverb=0.3, delay=0.05)
+                tracks.append(vocal_track)
+                
+                st.session_state.vocal_audio = vocal_audio
+            else:
+                st.session_state.vocal_audio = None
+            
+            # Mix all tracks
+            mixed = mix_tracks(tracks, SAMPLE_RATE)
             
             # Convert to mono for preview
             mixed_mono = (mixed[0] + mixed[1]) / 2
@@ -504,17 +687,32 @@ if st.session_state.mixed_audio is not None:
     
     # Mixer
     st.markdown("**🎚️ Mix**")
-    col1, col2, col3 = st.columns(3)
     
-    with col1:
-        melody_vol = st.slider("Melody", 0.0, 1.0, 0.8, 0.05)
-    with col2:
-        harmony_vol = st.slider("Harmony", 0.0, 1.0, 0.5, 0.05)
-    with col3:
-        bass_vol = st.slider("Bass", 0.0, 1.0, 0.7, 0.05)
+    # Show vocal slider if vocals are included
+    if st.session_state.get('vocal_audio') is not None:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            melody_vol = st.slider("Melody", 0.0, 1.0, 0.7, 0.05)
+        with col2:
+            harmony_vol = st.slider("Harmony", 0.0, 1.0, 0.5, 0.05)
+        with col3:
+            bass_vol = st.slider("Bass", 0.0, 1.0, 0.65, 0.05)
+        with col4:
+            vocal_vol = st.slider("🎤 Vocals", 0.0, 1.0, 0.85, 0.05)
+    else:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            melody_vol = st.slider("Melody", 0.0, 1.0, 0.8, 0.05)
+        with col2:
+            harmony_vol = st.slider("Harmony", 0.0, 1.0, 0.5, 0.05)
+        with col3:
+            bass_vol = st.slider("Bass", 0.0, 1.0, 0.7, 0.05)
+        vocal_vol = None
     
     # Remix if volumes changed
     if st.button("🔄 Update Mix"):
+        tracks = []
+        
         melody_track = Track("Melody", st.session_state.melody_audio, volume=melody_vol)
         harmony_track = Track("Harmony", st.session_state.harmony_audio, volume=harmony_vol, pan=-0.2)
         bass_track = Track("Bass", st.session_state.bass_audio, volume=bass_vol)
@@ -523,7 +721,15 @@ if st.session_state.mixed_audio is not None:
         harmony_track.effects = EffectsChain(reverb=0.35, chorus=0.2)
         bass_track.effects = EffectsChain(reverb=0.1)
         
-        mixed = mix_tracks([melody_track, harmony_track, bass_track], SAMPLE_RATE)
+        tracks.extend([melody_track, harmony_track, bass_track])
+        
+        # Add vocal track if present
+        if st.session_state.get('vocal_audio') is not None and vocal_vol is not None:
+            vocal_track = Track("Vocals", st.session_state.vocal_audio, volume=vocal_vol, pan=0.1)
+            vocal_track.effects = EffectsChain(reverb=0.3, delay=0.05)
+            tracks.append(vocal_track)
+        
+        mixed = mix_tracks(tracks, SAMPLE_RATE)
         mixed_mono = (mixed[0] + mixed[1]) / 2
         st.session_state.mixed_audio = mixed_mono
     
@@ -582,7 +788,7 @@ st.markdown("""
 <div style="text-align: center; color: #666; padding: 2em;">
     <p>🎵 <b>HumToHarmony</b> - Music 159 Final Project</p>
     <p>Turn your humming into complete musical compositions</p>
-    <p style="font-size: 0.8em;">UC Berkeley | Fall 2024</p>
+    <p style="font-size: 0.8em;">UC Berkeley | Fall 2025</p>
 </div>
 """, unsafe_allow_html=True)
 

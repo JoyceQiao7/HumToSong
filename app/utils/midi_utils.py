@@ -129,7 +129,7 @@ def freq_to_midi(frequency: float) -> float:
         frequency: Frequency in Hz
     
     Returns:
-        MIDI note number (fractional)
+        MIDI note number (fractional), or array of MIDI numbers
     
     Examples:
         >>> freq_to_midi(440.0)
@@ -137,8 +137,16 @@ def freq_to_midi(frequency: float) -> float:
         >>> freq_to_midi(261.63)
         60.0...
     """
-    if frequency <= 0:
-        raise ValueError(f"Frequency must be positive, got {frequency}")
+    # Handle both scalar and array inputs
+    frequency = np.asarray(frequency)
+    
+    # Check for invalid frequencies
+    if np.any(frequency <= 0):
+        # For arrays, just warn but continue (caller should have filtered)
+        if frequency.size > 1:
+            pass  # Caller should have already filtered out zeros
+        else:
+            raise ValueError(f"Frequency must be positive, got {frequency}")
     
     return A4_MIDI + 12 * np.log2(frequency / A4_FREQ)
 

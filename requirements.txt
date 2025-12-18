@@ -10,12 +10,16 @@ librosa>=0.10.1
 soundfile>=0.12.1
 
 # =============================================================================
-# Pitch Detection
+# Pitch Detection (CREPE - neural network pitch detection)
 # =============================================================================
-# CREPE (neural network) - optional, falls back to librosa PYIN
-# Uncomment below if you want CREPE (requires tensorflow):
-# crepe>=0.0.13
-# tensorflow>=2.13.0
+crepe>=0.0.13
+tensorflow>=2.13.0
+
+# =============================================================================
+# Audio Codec Support (for MP3, etc.)
+# =============================================================================
+audioread>=3.0.0
+ffmpeg-python>=0.2.0
 
 # =============================================================================
 # MIDI

@@ -48,8 +48,9 @@ QUANTIZE_RESOLUTION = 16     # 1/16th notes
 MIN_NOTE_DURATION = 0.125    # Minimum note duration in beats
 
 # Pitch detection
-PITCH_CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence for pitch detection
-PITCH_MODEL = "full"         # CREPE model size: 'tiny', 'small', 'medium', 'large', 'full'
+PITCH_CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence for pitch detection
+PITCH_METHOD = "pyin"        # Primary method: 'pyin' (fast) or 'crepe' (slow but accurate)
+PITCH_MODEL = "tiny"         # CREPE model size if using CREPE: 'tiny', 'small', 'medium', 'large', 'full'
 
 # =============================================================================
 # Harmony Generation

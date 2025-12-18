@@ -26,9 +26,10 @@ def quantize_notes(
     scale: str = "major",
     snap_to_grid: bool = True,
     snap_pitch: bool = True,
+    add_musicality: bool = True,
 ) -> List:
     """
-    Quantize notes to musical grid and scale.
+    Quantize notes to musical grid and scale with musicality enhancements.
     
     Args:
         notes: List of Note objects (times in seconds or beats)
@@ -38,6 +39,7 @@ def quantize_notes(
         scale: Scale type (e.g., "major", "minor")
         snap_to_grid: Whether to quantize timing
         snap_pitch: Whether to snap pitches to scale
+        add_musicality: Add dynamics, legato, and phrasing
     
     Returns:
         List of quantized Note objects
@@ -53,10 +55,11 @@ def quantize_notes(
     
     quantized = []
     
-    for note in notes:
+    for i, note in enumerate(notes):
         new_pitch = note.pitch
         new_start = note.start_time
         new_duration = note.duration
+        new_velocity = note.velocity
         
         # Snap pitch to scale
         if snap_pitch and scale_pitches:
@@ -70,13 +73,34 @@ def quantize_notes(
             # Quantize duration to grid (minimum 1 grid unit)
             new_duration = max(grid_size, round(note.duration / grid_size) * grid_size)
         
+        # Add musicality
+        if add_musicality and i > 0:
+            prev_note = quantized[-1]
+            
+            # Add legato (slight overlap) for smooth melodies
+            gap = new_start - (prev_note.start_time + prev_note.duration)
+            if gap < grid_size * 0.5 and abs(new_pitch - prev_note.pitch) <= 2:
+                # Extend previous note slightly for legato
+                prev_note.duration += min(gap * 0.5, grid_size * 0.25)
+            
+            # Add dynamics variation
+            # Longer notes get slightly softer, shorter notes punchier
+            if new_duration > 2.0:
+                new_velocity = int(new_velocity * 0.9)  # Longer = softer
+            elif new_duration < 0.5:
+                new_velocity = int(min(127, new_velocity * 1.1))  # Shorter = punchier
+            
+            # Emphasize downbeats (notes on beat 1 of measure)
+            if abs(new_start % 4.0) < grid_size * 0.1:
+                new_velocity = int(min(127, new_velocity * 1.15))
+        
         # Create new note with quantized values
         from .detector import Note
         quantized.append(Note(
             pitch=int(new_pitch),
             start_time=new_start,
             duration=new_duration,
-            velocity=note.velocity,
+            velocity=max(40, min(127, new_velocity)),  # Clamp velocity
             confidence=note.confidence,
         ))
     

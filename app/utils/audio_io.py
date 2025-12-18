@@ -9,10 +9,14 @@ from pathlib import Path
 from typing import Tuple, Optional, Union
 import soundfile as sf
 import librosa
+import audioread
 
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from config import SAMPLE_RATE, SILENCE_THRESHOLD
+
+# Formats natively supported by soundfile (libsndfile)
+SOUNDFILE_FORMATS = {'.wav', '.flac', '.ogg', '.aiff', '.aif'}
 
 
 def load_audio(
@@ -23,6 +27,9 @@ def load_audio(
 ) -> Tuple[np.ndarray, int]:
     """
     Load an audio file.
+    
+    Uses soundfile for WAV/FLAC/OGG (native support),
+    and audioread (ffmpeg) directly for MP3 and other formats.
     
     Args:
         file_path: Path to the audio file
@@ -38,17 +45,68 @@ def load_audio(
     if not file_path.exists():
         raise FileNotFoundError(f"Audio file not found: {file_path}")
     
-    # Load with librosa for format flexibility
-    audio, loaded_sr = librosa.load(
-        str(file_path),
-        sr=sr,
-        mono=mono
-    )
+    file_ext = file_path.suffix.lower()
+    
+    # Use soundfile for natively supported formats (faster, no warnings)
+    if file_ext in SOUNDFILE_FORMATS:
+        audio, loaded_sr = sf.read(str(file_path), dtype='float32')
+        
+        # Handle stereo to mono conversion
+        if mono and audio.ndim > 1:
+            audio = np.mean(audio, axis=1)
+        
+        # Resample if needed
+        if sr is not None and loaded_sr != sr:
+            audio = librosa.resample(audio, orig_sr=loaded_sr, target_sr=sr)
+            loaded_sr = sr
+    else:
+        # Use audioread directly for MP3 and other formats (uses ffmpeg)
+        audio, loaded_sr = _load_with_audioread(str(file_path), sr, mono)
     
     if normalize:
         audio = normalize_audio(audio)
     
     return audio, loaded_sr
+
+
+def _load_with_audioread(
+    file_path: str,
+    target_sr: int = SAMPLE_RATE,
+    mono: bool = True
+) -> Tuple[np.ndarray, int]:
+    """
+    Load audio using audioread (ffmpeg backend) directly.
+    
+    This avoids the PySoundFile warning that librosa.load() produces.
+    """
+    with audioread.audio_open(file_path) as f:
+        native_sr = f.samplerate
+        n_channels = f.channels
+        
+        # Read all audio data
+        audio_data = []
+        for buf in f:
+            audio_data.append(buf)
+        
+        # Convert to numpy array
+        audio_bytes = b''.join(audio_data)
+        audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
+        
+        # Normalize int16 to float [-1, 1]
+        audio = audio / 32768.0
+        
+        # Reshape for multi-channel
+        if n_channels > 1:
+            audio = audio.reshape(-1, n_channels)
+            if mono:
+                audio = np.mean(audio, axis=1)
+        
+        # Resample if needed
+        if target_sr is not None and native_sr != target_sr:
+            audio = librosa.resample(audio, orig_sr=native_sr, target_sr=target_sr)
+            native_sr = target_sr
+        
+        return audio, native_sr
 
 
 def save_audio(
@@ -100,6 +158,10 @@ def normalize_audio(audio: np.ndarray, target_peak: float = 0.95) -> np.ndarray:
     Returns:
         Normalized audio array
     """
+    # Handle empty or None audio
+    if audio is None or len(audio) == 0:
+        return audio if audio is not None else np.array([])
+    
     peak = np.max(np.abs(audio))
     
     if peak > 0:
@@ -126,6 +188,10 @@ def trim_silence(
     Returns:
         Tuple of (trimmed_audio, start_sample, end_sample)
     """
+    # Handle empty or very short audio
+    if audio is None or len(audio) < frame_length:
+        return audio, 0, len(audio) if audio is not None else 0
+    
     # Use librosa's trim function
     trimmed, index = librosa.effects.trim(
         audio,
@@ -133,6 +199,10 @@ def trim_silence(
         frame_length=frame_length,
         hop_length=hop_length
     )
+    
+    # If trimming resulted in empty audio, return original
+    if len(trimmed) == 0:
+        return audio, 0, len(audio)
     
     return trimmed, index[0], index[1]
 
@@ -264,4 +334,76 @@ def apply_fade(
         audio[-fade_out_samples:] *= fade_out
     
     return audio
+
+
+def prepare_vocal_track(
+    audio: np.ndarray,
+    sr: int = SAMPLE_RATE,
+    target_duration: float = None,
+) -> np.ndarray:
+    """
+    Prepare the original humming audio as a vocal track.
+    
+    Applies voice-optimized processing:
+    - Bandpass filter for voice clarity
+    - Normalization
+    - Gentle compression
+    - Fade in/out
+    
+    Args:
+        audio: Original humming audio
+        sr: Sample rate
+        target_duration: Target duration in seconds (pads/crops if needed)
+    
+    Returns:
+        Processed vocal track
+    """
+    from scipy import signal
+    
+    # 1. Bandpass filter for voice (wider than pitch detection)
+    # Human voice fundamentals: 80Hz - 1100Hz
+    # Plus harmonics for naturalness
+    low_freq = 80
+    high_freq = 5000  # Include harmonics
+    
+    nyquist = sr / 2
+    low = low_freq / nyquist
+    high = min(high_freq / nyquist, 0.99)
+    
+    # Apply butterworth bandpass
+    b, a = signal.butter(4, [low, high], btype='band')
+    vocal = signal.filtfilt(b, a, audio)
+    
+    # 2. Gentle compression (reduce dynamic range)
+    # Simple soft-knee compression
+    threshold = 0.3
+    ratio = 3.0
+    above_threshold = np.abs(vocal) > threshold
+    vocal[above_threshold] = np.sign(vocal[above_threshold]) * (
+        threshold + (np.abs(vocal[above_threshold]) - threshold) / ratio
+    )
+    
+    # 3. Normalize
+    max_val = np.max(np.abs(vocal))
+    if max_val > 0:
+        vocal = vocal / max_val * 0.85
+    
+    # 4. Apply fades
+    vocal = apply_fade(vocal, fade_in_ms=50, fade_out_ms=200, sr=sr)
+    
+    # 5. Adjust duration if needed
+    if target_duration is not None:
+        target_samples = int(target_duration * sr)
+        current_samples = len(vocal)
+        
+        if current_samples < target_samples:
+            # Pad with silence
+            padding = np.zeros(target_samples - current_samples)
+            vocal = np.concatenate([vocal, padding])
+        elif current_samples > target_samples:
+            # Crop (with fade out)
+            vocal = vocal[:target_samples]
+            vocal = apply_fade(vocal, fade_in_ms=0, fade_out_ms=200, sr=sr)
+    
+    return vocal.astype(np.float32)
 

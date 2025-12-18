@@ -257,16 +257,21 @@ def get_audio_bytes(
     """
     import io
     
+    # Handle empty audio - return 1 second of silence
+    if audio is None or len(audio) == 0:
+        audio = np.zeros(sr, dtype=np.float32)
+    
     # Prepare audio
     if audio.ndim == 2:
         audio_out = audio.T
     else:
-        audio_out = audio
+        audio_out = audio.copy()
     
-    # Normalize
-    max_val = np.max(np.abs(audio_out))
-    if max_val > 0:
-        audio_out = audio_out * (0.95 / max_val)
+    # Normalize (only if audio has non-zero values)
+    if len(audio_out) > 0:
+        max_val = np.max(np.abs(audio_out))
+        if max_val > 0:
+            audio_out = audio_out * (0.95 / max_val)
     
     audio_out = audio_out.astype(np.float32)
     

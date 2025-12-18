@@ -10,6 +10,7 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 import librosa
+from scipy import signal
 
 import sys
 from pathlib import Path
@@ -17,10 +18,72 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from config import (
     SAMPLE_RATE,
     PITCH_CONFIDENCE_THRESHOLD,
+    PITCH_METHOD,
     PITCH_MODEL,
     MIN_NOTE_DURATION,
 )
 from utils.midi_utils import freq_to_midi, quantize_pitch
+
+
+# =============================================================================
+# Audio Preprocessing for Voice Isolation
+# =============================================================================
+
+def preprocess_for_pitch(
+    audio: np.ndarray,
+    sr: int = SAMPLE_RATE,
+) -> np.ndarray:
+    """
+    Preprocess audio to isolate human voice for better pitch detection.
+    
+    Steps:
+    1. Bandpass filter for human voice range (80Hz - 1000Hz for humming)
+    2. Normalize audio level
+    3. Remove silence/noise below threshold
+    
+    Args:
+        audio: Input audio signal
+        sr: Sample rate
+    
+    Returns:
+        Preprocessed audio optimized for pitch detection
+    """
+    # 1. Bandpass filter for human voice/humming frequencies
+    # Humming typically ranges from 80Hz to 500Hz (fundamental)
+    # We extend to 1000Hz to capture harmonics that help with detection
+    low_freq = 80    # Hz - below typical humming range
+    high_freq = 1000  # Hz - above typical humming fundamental
+    
+    # Design bandpass filter
+    nyquist = sr / 2
+    low = low_freq / nyquist
+    high = high_freq / nyquist
+    
+    # Ensure frequencies are valid
+    low = max(0.001, min(low, 0.99))
+    high = max(low + 0.01, min(high, 0.99))
+    
+    # Apply 4th order Butterworth bandpass filter
+    b, a = signal.butter(4, [low, high], btype='band')
+    audio_filtered = signal.filtfilt(b, a, audio)
+    
+    # 2. Normalize to consistent level
+    max_val = np.max(np.abs(audio_filtered))
+    if max_val > 0:
+        audio_filtered = audio_filtered / max_val * 0.9
+    
+    # 3. Simple noise gate - zero out very quiet sections
+    noise_threshold = 0.02
+    envelope = np.abs(audio_filtered)
+    # Smooth the envelope
+    window_size = int(sr * 0.05)  # 50ms window
+    if window_size > 1:
+        envelope = np.convolve(envelope, np.ones(window_size)/window_size, mode='same')
+    
+    # Apply noise gate
+    audio_filtered = np.where(envelope > noise_threshold, audio_filtered, 0)
+    
+    return audio_filtered.astype(np.float32)
 
 
 @dataclass
@@ -80,47 +143,95 @@ class Note:
 def detect_pitch(
     audio: np.ndarray,
     sr: int = SAMPLE_RATE,
+    method: str = PITCH_METHOD,
     model_capacity: str = PITCH_MODEL,
-    step_size: int = 10,
+    step_size: int = 25,
     confidence_threshold: float = PITCH_CONFIDENCE_THRESHOLD,
+    preprocess: bool = True,
 ) -> PitchResult:
     """
-    Detect pitch using CREPE neural network.
+    Detect pitch using PYIN (fast) or CREPE (slow but accurate).
+    
+    For humming/singing, PYIN is recommended (10-20x faster than CREPE).
     
     Args:
         audio: Audio signal (mono, float)
         sr: Sample rate
-        model_capacity: CREPE model size ('tiny', 'small', 'medium', 'large', 'full')
-        step_size: Hop size in milliseconds
+        method: 'pyin' (fast, recommended) or 'crepe' (slow)
+        model_capacity: CREPE model size if using CREPE
+        step_size: Hop size in milliseconds (for CREPE)
         confidence_threshold: Minimum confidence for voiced detection
+        preprocess: Apply voice isolation preprocessing
     
     Returns:
         PitchResult object with pitch data
     """
+    import time as time_module
+    
+    audio_duration = len(audio) / sr
+    print(f"[Pitch] Input: {audio_duration:.2f}s audio at {sr}Hz")
+    
+    # Preprocess audio to isolate voice
+    if preprocess:
+        t0 = time_module.time()
+        audio = preprocess_for_pitch(audio, sr)
+        print(f"[Pitch] Preprocessing took {time_module.time() - t0:.2f}s")
+    
+    # Check if audio has content after preprocessing
+    max_amp = np.max(np.abs(audio))
+    print(f"[Pitch] Max amplitude after preprocessing: {max_amp:.4f}")
+    
+    if max_amp < 0.01:
+        print("[Pitch] WARNING: Audio is mostly silent after preprocessing")
+        return PitchResult(
+            times=np.array([0.0]),
+            frequencies=np.array([0.0]),
+            confidence=np.array([0.0]),
+            midi_pitches=np.array([0.0]),
+        )
+    
+    # Use PYIN by default (much faster for monophonic sources)
+    if method == "pyin":
+        return detect_pitch_pyin(audio, sr, confidence_threshold, preprocess=False)
+    
+    # CREPE method (slower but can be more accurate)
     try:
         import crepe
         
-        # Run CREPE pitch detection
+        estimated_frames = int(audio_duration * 1000 / step_size)
+        print(f"[Pitch] Starting CREPE (model={model_capacity}, step={step_size}ms, ~{estimated_frames} frames)")
+        
+        t0 = time_module.time()
+        
         time, frequency, confidence, _ = crepe.predict(
             audio,
             sr,
             model_capacity=model_capacity,
             step_size=step_size,
-            viterbi=True,  # Use Viterbi decoding for smoother pitch
+            viterbi=False,
         )
         
-    except ImportError:
-        # Fallback to librosa's pyin if CREPE not available
-        print("CREPE not available, falling back to PYIN")
-        return detect_pitch_pyin(audio, sr, confidence_threshold)
+        elapsed = time_module.time() - t0
+        print(f"[Pitch] CREPE completed in {elapsed:.2f}s ({len(time)} frames, {len(time)/elapsed:.0f} frames/sec)")
+        
+    except ImportError as e:
+        print(f"[Pitch] CREPE not available: {e}")
+        print("[Pitch] Using PYIN instead...")
+        return detect_pitch_pyin(audio, sr, confidence_threshold, preprocess=False)
+    except Exception as e:
+        print(f"[Pitch] CREPE error: {e}")
+        print("[Pitch] Falling back to PYIN...")
+        return detect_pitch_pyin(audio, sr, confidence_threshold, preprocess=False)
     
-    # Mark low-confidence frames as unvoiced
+    # Process CREPE results
     frequency = np.where(confidence >= confidence_threshold, frequency, 0)
     
-    # Convert frequencies to MIDI (fractional)
     midi_pitches = np.zeros_like(frequency)
     voiced_mask = frequency > 0
     midi_pitches[voiced_mask] = freq_to_midi(frequency[voiced_mask])
+    
+    voiced_count = np.sum(voiced_mask)
+    print(f"[Pitch] Result: {voiced_count}/{len(time)} frames voiced ({100*voiced_count/len(time):.1f}%)")
     
     return PitchResult(
         times=time,
@@ -134,35 +245,57 @@ def detect_pitch_pyin(
     audio: np.ndarray,
     sr: int = SAMPLE_RATE,
     confidence_threshold: float = 0.5,
+    preprocess: bool = True,
 ) -> PitchResult:
     """
-    Fallback pitch detection using librosa's PYIN algorithm.
+    Fast pitch detection using librosa's PYIN algorithm.
+    
+    PYIN is 10-20x faster than CREPE and works excellently for 
+    monophonic sources like humming and singing.
     
     Args:
         audio: Audio signal
         sr: Sample rate
         confidence_threshold: Minimum probability threshold
+        preprocess: Apply voice isolation preprocessing
     
     Returns:
         PitchResult object
     """
-    # Run PYIN
+    import time as time_module
+    
+    # Preprocess for voice isolation
+    if preprocess:
+        audio = preprocess_for_pitch(audio, sr)
+    
+    audio_duration = len(audio) / sr
+    print(f"[Pitch] Running PYIN on {audio_duration:.2f}s audio...")
+    
+    t0 = time_module.time()
+    
+    # Run PYIN with optimized settings for humming/singing
+    # Humming range: typically C2 (65Hz) to C5 (523Hz)
+    # Larger hop_length = faster processing
+    hop_length = 512  # Balance between speed and time resolution
+    
     f0, voiced_flag, voiced_probs = librosa.pyin(
         audio,
-        fmin=librosa.note_to_hz('C2'),
-        fmax=librosa.note_to_hz('C6'),
+        fmin=librosa.note_to_hz('C2'),  # ~65 Hz
+        fmax=librosa.note_to_hz('C5'),  # ~523 Hz
         sr=sr,
+        hop_length=hop_length,
+        frame_length=2048,  # Good for voice
     )
     
+    elapsed = time_module.time() - t0
+    
     # Create time array
-    hop_length = 512
     times = librosa.times_like(f0, sr=sr, hop_length=hop_length)
     
     # Handle NaN values
     f0 = np.nan_to_num(f0, nan=0.0)
-    
-    # Use voiced probability as confidence
     confidence = voiced_probs if voiced_probs is not None else np.ones_like(f0)
+    confidence = np.nan_to_num(confidence, nan=0.0)
     
     # Mark low-confidence as unvoiced
     f0 = np.where(confidence >= confidence_threshold, f0, 0)
@@ -170,7 +303,12 @@ def detect_pitch_pyin(
     # Convert to MIDI
     midi_pitches = np.zeros_like(f0)
     voiced_mask = f0 > 0
-    midi_pitches[voiced_mask] = freq_to_midi(f0[voiced_mask])
+    if np.any(voiced_mask):
+        midi_pitches[voiced_mask] = freq_to_midi(f0[voiced_mask])
+    
+    voiced_count = np.sum(voiced_mask)
+    print(f"[Pitch] PYIN completed in {elapsed:.2f}s ({len(f0)} frames, {int(len(f0)/elapsed)} frames/sec)")
+    print(f"[Pitch] Result: {voiced_count}/{len(f0)} frames voiced ({100*voiced_count/len(f0):.1f}%)")
     
     return PitchResult(
         times=times,
