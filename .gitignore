@@ -60,3 +60,6 @@ htmlcov/
 # Logs
 *.log
 
+# Documentation PDFs (submitted separately)
+*.pdf
+
